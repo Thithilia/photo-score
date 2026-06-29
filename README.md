@@ -2,6 +2,8 @@
 
 Web mẫu React + Vite để hai người thả ảnh, upload ảnh vào một Google Drive folder chung, nhận cá và mua vật phẩm. Bản hiện tại không dùng database và không dùng Supabase.
 
+Dữ liệu cá, lịch sử mua hàng, kho nội thất và phòng trang trí được lưu trong file `photo-score-state.json` ở Google Drive folder chung. `localStorage` chỉ dùng làm cache/dữ liệu dự phòng khi chưa kết nối Drive.
+
 ## Chạy local
 
 ```bash
@@ -24,7 +26,7 @@ App cần 2 giá trị, nhập trực tiếp trong giao diện:
 
 Các bước:
 
-1. Tạo một folder Google Drive chung và cấp quyền `Editor` cho tài khoản Google sẽ upload ảnh.
+1. Tạo một folder Google Drive chung và cấp quyền `Editor` cho cả hai tài khoản Google sẽ dùng app.
 2. Copy folder ID từ URL. Ví dụ `https://drive.google.com/drive/folders/abc123` thì folder ID là `abc123`.
 3. Vào Google Cloud Console và tạo hoặc chọn một project.
 4. Bật `Google Drive API`.
@@ -34,16 +36,19 @@ Các bước:
 
 ```text
 http://localhost:5173
+https://photo-score-olive.vercel.app
 ```
 
 8. Copy Client ID dạng `xxxxx.apps.googleusercontent.com`.
 9. Mở app, dán Client ID và Folder ID, bấm `Kết nối Drive`.
 
+Khi kết nối lần đầu, app sẽ tìm file `photo-score-state.json` trong folder Drive. Nếu chưa có, app tạo file này từ dữ liệu hiện tại trên trình duyệt. Các lần sau app sẽ tải dữ liệu chung từ file này.
+
 ## Cách tính cá và mua vật phẩm
 
 - Mỗi ảnh upload thành công lên Google Drive cộng cố định `5` cá.
 - Mỗi người có vùng thả ảnh riêng.
-- Ảnh gốc upload lên Google Drive. App chỉ giữ thumbnail nhỏ, số cá, tên người chơi và link Drive trong `localStorage`.
+- Ảnh gốc upload lên Google Drive. App lưu thumbnail nhỏ, số cá, tên người chơi, lịch sử mua, bố cục phòng và link Drive trong `photo-score-state.json`.
 - Cá khả dụng = cá kiếm được từ ảnh - cá đã mua vật phẩm.
 - Cửa hàng có 3 danh mục: `Thực phẩm`, `Nội thất`, `Quần áo`.
 - Mua `Nội thất` sẽ đưa món đó vào kho chung của trang `Phòng`.
@@ -66,6 +71,7 @@ http://localhost:5173
 
 ## Giới hạn
 
-Vì không dùng backend, số cá, lịch sử mua và bố cục phòng chỉ nằm trên trình duyệt/máy đang mở web. Nếu đổi máy, đổi trình duyệt hoặc xóa cache thì dữ liệu local sẽ không còn. Ảnh gốc vẫn nằm trong Google Drive folder chung sau khi upload thành công.
-
-Google token chỉ nằm trong phiên trình duyệt hiện tại. Reload trang hoặc hết hạn token thì bấm `Kết nối Drive` lại.
+- Google token chỉ nằm trong phiên trình duyệt hiện tại. Reload trang hoặc hết hạn token thì bấm `Kết nối Drive` lại.
+- Nếu chưa kết nối Drive, app vẫn chạy bằng dữ liệu local trên trình duyệt đó nhưng chưa chia sẻ sang người còn lại.
+- Đồng bộ hiện dùng cơ chế đơn giản: lần lưu cuối sẽ thắng nếu hai người cùng sửa đúng một lúc. Với nhu cầu cá nhân hai người thì đủ dùng, nhưng chưa phải realtime như backend riêng.
+- File `photo-score-state.json` có chứa thumbnail nhỏ dạng base64. Nếu dùng rất nhiều ảnh, file này có thể lớn dần; ảnh gốc vẫn nằm riêng trong Google Drive folder chung.

@@ -14,11 +14,13 @@ import {
   CalendarDays,
   Camera,
   CheckCircle2,
+  Cloud,
   Flame,
   Home,
   ImagePlus,
   Medal,
   Pencil,
+  RefreshCw,
   RotateCcw,
   Settings,
   Shirt,
@@ -33,6 +35,7 @@ import {
 type PersonId = 'person_a' | 'person_b';
 type StoreCategory = 'food' | 'furniture' | 'clothes';
 type AppView = 'score' | 'room';
+type SyncStatus = 'idle' | 'loading' | 'saving' | 'synced' | 'error';
 
 interface Person {
   id: PersonId;
@@ -83,6 +86,18 @@ interface ScoreState {
 interface DriveConfig {
   clientId: string;
   folderId: string;
+}
+
+interface DriveFileMetadata {
+  id: string;
+  name: string;
+  modifiedTime?: string;
+}
+
+interface DriveStateFile {
+  version: number;
+  updatedAt: string;
+  state: ScoreState;
 }
 
 interface BaseStats {
@@ -136,7 +151,9 @@ declare global {
 const STORAGE_KEY = 'photo-score-state:v2';
 const DRIVE_CONFIG_KEY = 'photo-score-google-drive-config:v1';
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+const DRIVE_STATE_FILE_NAME = 'photo-score-state.json';
+const DRIVE_JSON_MIME_TYPE = 'application/json';
 const FISH_PER_PHOTO = 5;
 
 const defaultState: ScoreState = {
@@ -455,6 +472,11 @@ function App() {
     'idle',
   );
   const [driveError, setDriveError] = useState<string | null>(null);
+  const [driveStateFileId, setDriveStateFileId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [hasLoadedDriveState, setHasLoadedDriveState] = useState(false);
   const [draggingId, setDraggingId] = useState<PersonId | null>(null);
   const [isEditingNames, setIsEditingNames] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<StoreCategory>('food');
@@ -471,7 +493,24 @@ function App() {
     setAccessToken(null);
     setDriveStatus('idle');
     setDriveError(null);
+    setDriveStateFileId(null);
+    setSyncStatus('idle');
+    setSyncError(null);
+    setLastSyncedAt(null);
+    setHasLoadedDriveState(false);
   }, [driveConfig]);
+
+  useEffect(() => {
+    if (!accessToken || !driveStateFileId || !hasLoadedDriveState) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void saveSharedState(state);
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [accessToken, driveStateFileId, hasLoadedDriveState, state]);
 
   const statsByPerson = useMemo(() => {
     return state.people.reduce<Record<PersonId, PersonStats>>(
@@ -505,6 +544,8 @@ function App() {
   const totalEarned = state.entries.length * FISH_PER_PHOTO;
   const totalSpent = state.purchases.reduce((sum, purchase) => sum + purchase.price, 0);
   const furniturePurchases = state.purchases.filter((purchase) => purchase.category === 'furniture');
+  const syncStatusLabel = getSyncStatusLabel(syncStatus);
+  const lastSyncedLabel = lastSyncedAt ? formatDateTime(lastSyncedAt) : null;
 
   function showMessage(nextMessage: string, timeout = 1800) {
     setMessage(nextMessage);
@@ -536,7 +577,7 @@ function App() {
           setAccessToken(response.access_token);
           setDriveStatus('connected');
           setDriveError(null);
-          showMessage('Đã kết nối Google Drive.');
+          void loadSharedState(response.access_token);
         },
       });
 
@@ -549,6 +590,90 @@ function App() {
       setDriveStatus('error');
       setDriveError(error instanceof Error ? error.message : 'Không kết nối được Google Drive.');
     }
+  }
+
+  async function loadSharedState(token: string) {
+    const folderId = driveConfig.folderId.trim();
+
+    if (!folderId) {
+      showMessage('Cần nhập Drive Folder ID.');
+      return;
+    }
+
+    setSyncStatus('loading');
+    setSyncError(null);
+
+    try {
+      const existingFile = await findDriveStateFile(token, folderId);
+      const now = new Date().toISOString();
+
+      if (existingFile) {
+        const sharedState = await downloadDriveStateFile(token, existingFile.id);
+
+        setDriveStateFileId(existingFile.id);
+        setState(sharedState);
+        setHasLoadedDriveState(true);
+        setLastSyncedAt(existingFile.modifiedTime ?? now);
+        setSyncStatus('synced');
+        showMessage('Đã tải dữ liệu chung từ Google Drive.', 2200);
+        return;
+      }
+
+      const createdFile = await createDriveStateFile(token, folderId, state);
+      setDriveStateFileId(createdFile.id);
+      setHasLoadedDriveState(true);
+      setLastSyncedAt(createdFile.modifiedTime ?? now);
+      setSyncStatus('synced');
+      showMessage('Đã tạo file dữ liệu chung trên Google Drive.', 2600);
+    } catch (error) {
+      const nextError = getErrorMessage(error, 'Không tải được dữ liệu chung từ Drive.');
+      setSyncStatus('error');
+      setSyncError(nextError);
+
+      if (isAuthError(nextError)) {
+        setAccessToken(null);
+        setDriveStatus('idle');
+      }
+
+      showMessage('Không đồng bộ được dữ liệu chung. Kiểm tra quyền folder hoặc kết nối lại Drive.', 3200);
+    }
+  }
+
+  async function saveSharedState(nextState: ScoreState) {
+    if (!accessToken || !driveStateFileId) {
+      return;
+    }
+
+    setSyncStatus('saving');
+    setSyncError(null);
+
+    try {
+      const savedFile = await updateDriveStateFile(accessToken, driveStateFileId, nextState);
+      setLastSyncedAt(savedFile.modifiedTime ?? new Date().toISOString());
+      setSyncStatus('synced');
+    } catch (error) {
+      const nextError = getErrorMessage(error, 'Không lưu được dữ liệu chung lên Drive.');
+      setSyncStatus('error');
+      setSyncError(nextError);
+
+      if (isAuthError(nextError)) {
+        setAccessToken(null);
+        setDriveStatus('idle');
+        showMessage('Phiên Google Drive đã hết hạn. Kết nối lại để lưu dữ liệu chung.', 3200);
+        return;
+      }
+
+      showMessage('Không lưu được dữ liệu chung lên Drive.', 2600);
+    }
+  }
+
+  function refreshSharedState() {
+    if (!accessToken) {
+      showMessage('Kết nối Google Drive trước khi tải dữ liệu chung.');
+      return;
+    }
+
+    void loadSharedState(accessToken);
   }
 
   function updateDriveConfig(field: keyof DriveConfig, value: string) {
@@ -759,7 +884,7 @@ function App() {
   }
 
   function resetAll() {
-    if (!window.confirm('Xóa toàn bộ ảnh, cá và vật phẩm đã mua?')) {
+    if (!window.confirm('Xóa toàn bộ ảnh, cá, kho và phòng trong dữ liệu chung?')) {
       return;
     }
 
@@ -830,7 +955,7 @@ function App() {
               <Settings aria-hidden="true" />
               <div>
                 <h2>Google Drive chung</h2>
-                <p>Ảnh upload lên folder Drive này trước khi được cộng 5 cá.</p>
+                <p>Ảnh và dữ liệu cá, kho, phòng được lưu trong folder Drive chung.</p>
               </div>
             </div>
 
@@ -851,21 +976,45 @@ function App() {
                   placeholder="ID folder Drive chung"
                 />
               </label>
-              <button className="drive-connect-button" onClick={() => void connectGoogleDrive()}>
-                {driveStatus === 'connected' ? (
-                  <CheckCircle2 aria-hidden="true" />
-                ) : (
-                  <Upload aria-hidden="true" />
-                )}
-                {driveStatus === 'connecting'
-                  ? 'Đang kết nối'
-                  : driveStatus === 'connected'
-                    ? 'Đã kết nối'
-                    : 'Kết nối Drive'}
-              </button>
+              <div className="drive-button-row">
+                <button className="drive-connect-button" onClick={() => void connectGoogleDrive()}>
+                  {driveStatus === 'connected' ? (
+                    <CheckCircle2 aria-hidden="true" />
+                  ) : (
+                    <Upload aria-hidden="true" />
+                  )}
+                  {driveStatus === 'connecting'
+                    ? 'Đang kết nối'
+                    : driveStatus === 'connected'
+                      ? 'Đã kết nối'
+                      : 'Kết nối Drive'}
+                </button>
+                <button
+                  className="ghost-button"
+                  disabled={!accessToken || syncStatus === 'loading'}
+                  onClick={refreshSharedState}
+                  type="button"
+                >
+                  <RefreshCw aria-hidden="true" />
+                  Tải lại
+                </button>
+              </div>
             </div>
 
             {driveError ? <p className="drive-error">{driveError}</p> : null}
+            <div className={`sync-status sync-status-${syncStatus}`}>
+              <Cloud aria-hidden="true" />
+              <div>
+                <strong>{syncStatusLabel}</strong>
+                <span>
+                  {driveStateFileId
+                    ? `File chung: ${DRIVE_STATE_FILE_NAME}`
+                    : 'Chưa có file dữ liệu chung trên Drive.'}
+                </span>
+                {lastSyncedLabel ? <span>Lần cuối: {lastSyncedLabel}</span> : null}
+              </div>
+            </div>
+            {syncError ? <p className="drive-error">{syncError}</p> : null}
           </section>
 
           <section className="person-grid">
@@ -1192,23 +1341,33 @@ function PersonScorePanel({
         {entries.length === 0 ? (
           <p className="empty-text">Chưa có ảnh.</p>
         ) : (
-          entries.slice(0, 12).map((entry) => (
-            <figure key={entry.id} className="photo-tile">
-              <img src={entry.dataUrl} alt={entry.name} />
-              <figcaption>
-                {entry.driveViewLink ? (
-                  <a href={entry.driveViewLink} target="_blank" rel="noreferrer">
-                    +{FISH_PER_PHOTO}
-                  </a>
+          entries.slice(0, 12).map((entry) => {
+            const imageSource = entry.dataUrl || entry.driveThumbnailLink;
+
+            return (
+              <figure key={entry.id} className="photo-tile">
+                {imageSource ? (
+                  <img src={imageSource} alt={entry.name} />
                 ) : (
-                  <span>+{FISH_PER_PHOTO}</span>
+                  <div className="photo-placeholder">
+                    <ImagePlus aria-hidden="true" />
+                  </div>
                 )}
-                <button onClick={() => onDelete(entry.id)} title="Xóa ảnh">
-                  <Trash2 aria-hidden="true" />
-                </button>
-              </figcaption>
-            </figure>
-          ))
+                <figcaption>
+                  {entry.driveViewLink ? (
+                    <a href={entry.driveViewLink} target="_blank" rel="noreferrer">
+                      +{FISH_PER_PHOTO}
+                    </a>
+                  ) : (
+                    <span>+{FISH_PER_PHOTO}</span>
+                  )}
+                  <button onClick={() => onDelete(entry.id)} title="Xóa ảnh">
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                </figcaption>
+              </figure>
+            );
+          })
         )}
       </div>
     </article>
@@ -1323,45 +1482,110 @@ function loadState(): ScoreState {
   }
 
   try {
-    const parsed = JSON.parse(saved) as Partial<ScoreState> & { pointsPerPhoto?: number };
-    const people =
-      parsed.people?.length === 2
-        ? parsed.people.map((person, index) => {
-            const fallback = defaultState.people[index];
-            return {
-              ...fallback,
-              ...person,
-              name: normalizePersonName(
-                typeof person.name === 'string' ? person.name : fallback.name,
-                index,
-              ),
-            };
-          })
-        : defaultState.people;
-    const purchases = Array.isArray(parsed.purchases)
-      ? parsed.purchases.map((purchase) => ({
-          ...purchase,
-          itemName: getStoreItemName(purchase.itemId, purchase.itemName),
-        }))
-      : [];
-    const roomPlacements = Array.isArray(parsed.roomPlacements)
-      ? parsed.roomPlacements.map((placement) => ({
-          ...placement,
-          itemName: getStoreItemName(placement.itemId, placement.itemName),
-        }))
-      : [];
-
-    return {
-      people,
-      entries: Array.isArray(parsed.entries)
-        ? parsed.entries.map((entry) => ({ ...entry, points: FISH_PER_PHOTO }))
-        : [],
-      purchases,
-      roomPlacements,
-    };
+    return normalizeScoreState(JSON.parse(saved) as Partial<ScoreState>);
   } catch {
     return defaultState;
   }
+}
+
+function normalizeDriveStatePayload(payload: unknown): ScoreState {
+  if (isPlainObject(payload) && isPlainObject(payload.state)) {
+    return normalizeScoreState(payload.state as Partial<ScoreState>);
+  }
+
+  if (isPlainObject(payload)) {
+    return normalizeScoreState(payload as Partial<ScoreState>);
+  }
+
+  return defaultState;
+}
+
+function normalizeScoreState(parsed: Partial<ScoreState> | null | undefined): ScoreState {
+  const peopleSource = Array.isArray(parsed?.people) ? parsed.people : [];
+  const people = defaultState.people.map((fallback, index) => {
+    const person = peopleSource[index] as Partial<Person> | undefined;
+    return {
+      ...fallback,
+      color: typeof person?.color === 'string' ? person.color : fallback.color,
+      name: normalizePersonName(
+        typeof person?.name === 'string' ? person.name : fallback.name,
+        index,
+      ),
+    };
+  });
+
+  const entries = Array.isArray(parsed?.entries)
+    ? parsed.entries.map((entry) => ({
+        id: typeof entry.id === 'string' ? entry.id : crypto.randomUUID(),
+        personId: isPersonId(entry.personId) ? entry.personId : 'person_a',
+        name: typeof entry.name === 'string' ? entry.name : 'Ảnh',
+        dataUrl: typeof entry.dataUrl === 'string' ? entry.dataUrl : '',
+        points: FISH_PER_PHOTO,
+        createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
+        driveFileId: optionalString(entry.driveFileId),
+        driveViewLink: optionalString(entry.driveViewLink),
+        driveThumbnailLink: optionalString(entry.driveThumbnailLink),
+      }))
+    : [];
+
+  const purchases = Array.isArray(parsed?.purchases)
+    ? parsed.purchases.map((purchase) => {
+        const itemId = typeof purchase.itemId === 'string' ? purchase.itemId : 'unknown';
+        const category = isStoreCategory(purchase.category) ? purchase.category : 'food';
+        const fallbackName = typeof purchase.itemName === 'string' ? purchase.itemName : 'Vật phẩm';
+        return {
+          id: typeof purchase.id === 'string' ? purchase.id : crypto.randomUUID(),
+          personId: isPersonId(purchase.personId) ? purchase.personId : 'person_a',
+          itemId,
+          itemName: getStoreItemName(itemId, fallbackName),
+          category,
+          price: typeof purchase.price === 'number' ? purchase.price : 0,
+          purchasedAt:
+            typeof purchase.purchasedAt === 'string' ? purchase.purchasedAt : new Date().toISOString(),
+        };
+      })
+    : [];
+
+  const roomPlacements = Array.isArray(parsed?.roomPlacements)
+    ? parsed.roomPlacements.map((placement, index) => {
+        const itemId = typeof placement.itemId === 'string' ? placement.itemId : 'unknown';
+        const fallbackName = typeof placement.itemName === 'string' ? placement.itemName : 'Nội thất';
+        return {
+          id: typeof placement.id === 'string' ? placement.id : crypto.randomUUID(),
+          purchaseId:
+            typeof placement.purchaseId === 'string' ? placement.purchaseId : crypto.randomUUID(),
+          itemId,
+          itemName: getStoreItemName(itemId, fallbackName),
+          personId: isPersonId(placement.personId) ? placement.personId : 'person_a',
+          xRatio: clampRatio(placement.xRatio),
+          yRatio: clampRatio(placement.yRatio),
+          zIndex: typeof placement.zIndex === 'number' ? placement.zIndex : index + 1,
+        };
+      })
+    : [];
+
+  return {
+    people,
+    entries,
+    purchases,
+    roomPlacements,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPersonId(value: unknown): value is PersonId {
+  return value === 'person_a' || value === 'person_b';
+}
+
+function isStoreCategory(value: unknown): value is StoreCategory {
+  return value === 'food' || value === 'furniture' || value === 'clothes';
+}
+
+function optionalString(value: unknown) {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function normalizePersonName(value: string, index: number) {
@@ -1480,6 +1704,188 @@ function loadGoogleIdentityScript() {
     script.onerror = () => reject(new Error('Không tải được Google script.'));
     document.head.appendChild(script);
   });
+}
+
+async function findDriveStateFile(accessToken: string, folderId: string) {
+  const query = [
+    `'${escapeDriveQueryValue(folderId)}' in parents`,
+    `name = '${escapeDriveQueryValue(DRIVE_STATE_FILE_NAME)}'`,
+    'trashed = false',
+  ].join(' and ');
+  const params = new URLSearchParams({
+    q: query,
+    spaces: 'drive',
+    fields: 'files(id,name,modifiedTime)',
+    orderBy: 'modifiedTime desc',
+    pageSize: '1',
+  });
+
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(await readDriveError(response, 'Drive state lookup failed'));
+  }
+
+  const data = (await response.json()) as { files?: DriveFileMetadata[] };
+  return Array.isArray(data.files) ? data.files[0] ?? null : null;
+}
+
+async function downloadDriveStateFile(accessToken: string, fileId: string) {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readDriveError(response, 'Drive state download failed'));
+  }
+
+  return normalizeDriveStatePayload(await response.json());
+}
+
+async function createDriveStateFile(accessToken: string, folderId: string, state: ScoreState) {
+  const metadata = {
+    name: DRIVE_STATE_FILE_NAME,
+    mimeType: DRIVE_JSON_MIME_TYPE,
+    parents: [folderId],
+  };
+  const payload = JSON.stringify(createDriveStatePayload(state), null, 2);
+  const { body, boundary } = createMultipartBody(metadata, payload, DRIVE_JSON_MIME_TYPE);
+
+  const response = await fetch(
+    'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readDriveError(response, 'Drive state create failed'));
+  }
+
+  return (await response.json()) as DriveFileMetadata;
+}
+
+async function updateDriveStateFile(accessToken: string, fileId: string, state: ScoreState) {
+  const metadata = {
+    name: DRIVE_STATE_FILE_NAME,
+    mimeType: DRIVE_JSON_MIME_TYPE,
+  };
+  const payload = JSON.stringify(createDriveStatePayload(state), null, 2);
+  const { body, boundary } = createMultipartBody(metadata, payload, DRIVE_JSON_MIME_TYPE);
+
+  const response = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(
+      fileId,
+    )}?uploadType=multipart&fields=id,name,modifiedTime`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readDriveError(response, 'Drive state update failed'));
+  }
+
+  return (await response.json()) as DriveFileMetadata;
+}
+
+function createDriveStatePayload(state: ScoreState): DriveStateFile {
+  return {
+    version: 3,
+    updatedAt: new Date().toISOString(),
+    state: normalizeScoreState(state),
+  };
+}
+
+function createMultipartBody(
+  metadata: Record<string, unknown>,
+  content: BlobPart,
+  contentType: string,
+) {
+  const boundary = `photo_score_${crypto.randomUUID()}`;
+  const body = new Blob(
+    [
+      `--${boundary}\r\n`,
+      'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+      JSON.stringify(metadata),
+      `\r\n--${boundary}\r\n`,
+      `Content-Type: ${contentType}; charset=UTF-8\r\n\r\n`,
+      content,
+      `\r\n--${boundary}--`,
+    ],
+    { type: `multipart/related; boundary=${boundary}` },
+  );
+
+  return { boundary, body };
+}
+
+function escapeDriveQueryValue(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function readDriveError(response: Response, label: string) {
+  const text = await response.text();
+  return `${label} ${response.status}: ${text}`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function isAuthError(message: string) {
+  return message.includes(' 401') || message.toLowerCase().includes('invalid_grant');
+}
+
+function getSyncStatusLabel(status: SyncStatus) {
+  if (status === 'loading') {
+    return 'Đang tải dữ liệu chung';
+  }
+
+  if (status === 'saving') {
+    return 'Đang lưu dữ liệu chung';
+  }
+
+  if (status === 'synced') {
+    return 'Đã đồng bộ với Google Drive';
+  }
+
+  if (status === 'error') {
+    return 'Đồng bộ lỗi';
+  }
+
+  return 'Chưa đồng bộ Drive';
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date);
 }
 
 async function uploadFileToDrive(file: File, accessToken: string, folderId: string) {
