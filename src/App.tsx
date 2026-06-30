@@ -1431,7 +1431,7 @@ function StorePanel({
                   <h3>{item.name}</h3>
                   <p>{item.description}</p>
                 </div>
-                <strong>{item.price} ca</strong>
+                <strong className="store-price">{item.price} cá</strong>
               </div>
               <div className="store-buy-row">
                 {people.map((person) => {
