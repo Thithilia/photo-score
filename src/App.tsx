@@ -31,6 +31,7 @@ import {
   Upload,
   Utensils,
 } from 'lucide-react';
+import { StoreItemIllustration } from './itemIllustrations';
 
 type PersonId = 'person_a' | 'person_b';
 type StoreCategory = 'food' | 'furniture' | 'clothes';
@@ -1421,36 +1422,33 @@ function StorePanel({
       </div>
 
       <div className="store-grid">
-        {visibleItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <article className="store-item" key={item.id}>
-              <div className="store-item-main">
-                <Icon aria-hidden="true" />
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>{item.description}</p>
-                </div>
-                <strong className="store-price">{item.price} cá</strong>
+        {visibleItems.map((item) => (
+          <article className="store-item" key={item.id}>
+            <StoreItemIllustration category={item.category} itemId={item.id} title={item.name} />
+            <div className="store-item-main">
+              <div>
+                <h3>{item.name}</h3>
+                <p>{item.description}</p>
               </div>
-              <div className="store-buy-row">
-                {people.map((person) => {
-                  const affordable = statsByPerson[person.id].balancePoints >= item.price;
-                  return (
-                    <button
-                      key={person.id}
-                      disabled={!affordable}
-                      onClick={() => onBuy(person.id, item)}
-                      type="button"
-                    >
-                      Mua cho {person.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </article>
-          );
-        })}
+              <strong className="store-price">{item.price} cá</strong>
+            </div>
+            <div className="store-buy-row">
+              {people.map((person) => {
+                const affordable = statsByPerson[person.id].balancePoints >= item.price;
+                return (
+                  <button
+                    key={person.id}
+                    disabled={!affordable}
+                    onClick={() => onBuy(person.id, item)}
+                    type="button"
+                  >
+                    Mua cho {person.name}
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );

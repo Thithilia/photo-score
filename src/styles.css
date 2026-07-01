@@ -906,9 +906,43 @@ button:disabled {
 .store-item {
   display: grid;
   gap: 14px;
+  align-content: start;
   border: 2px solid var(--line-soft);
   background: #fff;
   padding: 14px;
+}
+
+.item-illustration {
+  display: block;
+  width: 100%;
+  height: 112px;
+  border: 2px solid var(--line);
+  background: var(--ill-bg);
+}
+
+.item-illustration-bg {
+  fill: var(--ill-bg);
+}
+
+.item-illustration-food {
+  --ill-bg: #fff3d9;
+  --ill-main: #d99b34;
+  --ill-soft: #f2d08a;
+  --ill-accent: #b85f57;
+}
+
+.item-illustration-furniture {
+  --ill-bg: #edf3ef;
+  --ill-main: #2f6d5f;
+  --ill-soft: #b9d4d7;
+  --ill-accent: #a77721;
+}
+
+.item-illustration-clothes {
+  --ill-bg: #f7efea;
+  --ill-main: #b85f57;
+  --ill-soft: #f0d28a;
+  --ill-accent: #3f6f8f;
 }
 
 .store-item-main {
