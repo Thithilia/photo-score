@@ -483,7 +483,8 @@ button:disabled {
   padding: 12px;
 }
 
-.purchase-summary h3 {
+.purchase-summary h3,
+.transaction-summary h3 {
   margin: 0;
   font-size: 0.95rem;
   letter-spacing: 0;
@@ -508,6 +509,60 @@ button:disabled {
 }
 
 .purchase-list strong {
+  color: var(--danger);
+}
+
+.transaction-summary {
+  display: grid;
+  gap: 10px;
+  border: 2px solid var(--line-soft);
+  background: var(--surface-alt);
+  padding: 12px;
+}
+
+.transaction-list {
+  display: grid;
+  gap: 8px;
+}
+
+.transaction-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 2px solid var(--line-soft);
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.transaction-row span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.transaction-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+
+.transaction-row small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.transaction-row b {
+  white-space: nowrap;
+}
+
+.transaction-row b.positive {
+  color: var(--green);
+}
+
+.transaction-row b.negative {
   color: var(--danger);
 }
 

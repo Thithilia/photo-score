@@ -37,6 +37,7 @@ type PersonId = 'person_a' | 'person_b';
 type StoreCategory = 'food' | 'furniture' | 'clothes';
 type AppView = 'score' | 'room';
 type SyncStatus = 'idle' | 'loading' | 'saving' | 'synced' | 'error';
+type FishTransactionType = 'photo_upload' | 'store_purchase' | 'migration_adjustment';
 
 interface Person {
   id: PersonId;
@@ -77,11 +78,34 @@ interface RoomPlacement {
   zIndex: number;
 }
 
+interface FishWallet {
+  personId: PersonId;
+  balance: number;
+  earnedTotal: number;
+  spentTotal: number;
+  updatedAt: string;
+}
+
+interface FishTransaction {
+  id: string;
+  personId: PersonId;
+  type: FishTransactionType;
+  amount: number;
+  balanceAfter: number;
+  note: string;
+  createdAt: string;
+  entryId?: string;
+  purchaseId?: string;
+  itemId?: string;
+}
+
 interface ScoreState {
   people: Person[];
   entries: PhotoEntry[];
   purchases: PurchaseEntry[];
   roomPlacements: RoomPlacement[];
+  wallets: FishWallet[];
+  fishTransactions: FishTransaction[];
 }
 
 interface DriveConfig {
@@ -156,15 +180,20 @@ const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_STATE_FILE_NAME = 'photo-score-state.json';
 const DRIVE_JSON_MIME_TYPE = 'application/json';
 const FISH_PER_PHOTO = 5;
+const INITIAL_WALLET_DATE = '2026-01-01T00:00:00.000Z';
+
+const defaultPeople: Person[] = [
+  { id: 'person_a', name: 'Tôi', color: '#2f6d5f' },
+  { id: 'person_b', name: 'Cậu iu', color: '#c96d63' },
+];
 
 const defaultState: ScoreState = {
-  people: [
-    { id: 'person_a', name: 'Tôi', color: '#2f6d5f' },
-    { id: 'person_b', name: 'Cậu iu', color: '#c96d63' },
-  ],
+  people: defaultPeople,
   entries: [],
   purchases: [],
   roomPlacements: [],
+  wallets: defaultPeople.map((person) => createEmptyWallet(person.id)),
+  fishTransactions: [],
 };
 
 const storeCategories: Array<{ id: StoreCategory; label: string; icon: LucideIcon }> = [
@@ -517,8 +546,8 @@ function App() {
     return state.people.reduce<Record<PersonId, PersonStats>>(
       (acc, person) => {
         const entries = state.entries.filter((entry) => entry.personId === person.id);
-        const purchases = state.purchases.filter((purchase) => purchase.personId === person.id);
-        const stats = getStats(entries, purchases);
+        const wallet = getWallet(state.wallets, person.id);
+        const stats = getStats(entries, wallet);
         acc[person.id] = {
           ...stats,
           badges: badgeRules.filter((badge) => badge.test(stats)).map((badge) => badge.id),
@@ -527,7 +556,7 @@ function App() {
       },
       { person_a: emptyStats(), person_b: emptyStats() },
     );
-  }, [state.entries, state.people, state.purchases]);
+  }, [state.entries, state.people, state.wallets]);
 
   const leader = useMemo(() => {
     const [first, second] = state.people;
@@ -542,8 +571,7 @@ function App() {
   }, [state.people, statsByPerson]);
 
   const driveConfigured = Boolean(driveConfig.clientId.trim() && driveConfig.folderId.trim());
-  const totalEarned = state.entries.length * FISH_PER_PHOTO;
-  const totalSpent = state.purchases.reduce((sum, purchase) => sum + purchase.price, 0);
+  const totalBalance = state.wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
   const furniturePurchases = state.purchases.filter((purchase) => purchase.category === 'furniture');
   const syncStatusLabel = getSyncStatusLabel(syncStatus);
   const lastSyncedLabel = lastSyncedAt ? formatDateTime(lastSyncedAt) : null;
@@ -735,7 +763,21 @@ function App() {
       return;
     }
 
-    setState((current) => ({ ...current, entries: [...entries, ...current.entries] }));
+    setState((current) =>
+      applyFishTransactions(
+        { ...current, entries: [...entries, ...current.entries] },
+        entries.map((entry) => ({
+          id: `photo-${entry.id}`,
+          personId,
+          type: 'photo_upload',
+          amount: FISH_PER_PHOTO,
+          balanceAfter: 0,
+          note: `Đăng ảnh: ${entry.name}`,
+          createdAt: entry.createdAt,
+          entryId: entry.id,
+        })),
+      ),
+    );
     showMessage(
       failedUploads > 0
         ? `Đã upload ${entries.length} ảnh, lỗi ${failedUploads} ảnh.`
@@ -772,21 +814,45 @@ function App() {
       return;
     }
 
-    setState((current) => ({
-      ...current,
-      purchases: [
+    const purchaseId = crypto.randomUUID();
+    const purchasedAt = new Date().toISOString();
+    const purchase: PurchaseEntry = {
+      id: purchaseId,
+      personId,
+      itemId: item.id,
+      itemName: item.name,
+      category: item.category,
+      price: item.price,
+      purchasedAt,
+    };
+
+    setState((current) => {
+      const currentBalance = getWallet(current.wallets, personId).balance;
+
+      if (currentBalance < item.price) {
+        return current;
+      }
+
+      return applyFishTransactions(
         {
-          id: crypto.randomUUID(),
-          personId,
-          itemId: item.id,
-          itemName: item.name,
-          category: item.category,
-          price: item.price,
-          purchasedAt: new Date().toISOString(),
+          ...current,
+          purchases: [purchase, ...current.purchases],
         },
-        ...current.purchases,
-      ],
-    }));
+        [
+          {
+            id: `purchase-${purchaseId}`,
+            personId,
+            type: 'store_purchase',
+            amount: -item.price,
+            balanceAfter: 0,
+            note: `Mua ${item.name}`,
+            createdAt: purchasedAt,
+            purchaseId,
+            itemId: item.id,
+          },
+        ],
+      );
+    });
     showMessage(
       item.category === 'furniture'
         ? `${person.name} đã mua ${item.name}. Món này đã vào kho chung.`
@@ -865,23 +931,11 @@ function App() {
       return;
     }
 
-    const remainingEntries = state.entries.filter((candidate) => candidate.id !== entryId);
-    const remainingEarned =
-      remainingEntries.filter((candidate) => candidate.personId === entry.personId).length *
-      FISH_PER_PHOTO;
-    const spent = state.purchases
-      .filter((purchase) => purchase.personId === entry.personId)
-      .reduce((sum, purchase) => sum + purchase.price, 0);
-
-    if (remainingEarned < spent) {
-      showMessage('Không thể xóa ảnh vì cá còn lại thấp hơn cá đã mua hàng.', 2600);
-      return;
-    }
-
     setState((current) => ({
       ...current,
       entries: current.entries.filter((candidate) => candidate.id !== entryId),
     }));
+    showMessage('Đã xóa ảnh khỏi danh sách. Ví cá và lịch sử giao dịch không đổi.', 2400);
   }
 
   function resetAll() {
@@ -941,7 +995,7 @@ function App() {
         </div>
         <div>
           <span>Cá khả dụng</span>
-          <strong>{totalEarned - totalSpent}</strong>
+          <strong>{totalBalance}</strong>
         </div>
         <div>
           <span>Dẫn trước</span>
@@ -1026,6 +1080,9 @@ function App() {
                 stats={statsByPerson[person.id]}
                 entries={state.entries.filter((entry) => entry.personId === person.id)}
                 purchases={state.purchases.filter((purchase) => purchase.personId === person.id)}
+                transactions={state.fishTransactions.filter(
+                  (transaction) => transaction.personId === person.id,
+                )}
                 dragging={draggingId === person.id}
                 editingName={isEditingNames}
                 onNameChange={(value) => updatePersonName(person.id, value)}
@@ -1241,6 +1298,7 @@ interface PersonScorePanelProps {
   stats: PersonStats;
   entries: PhotoEntry[];
   purchases: PurchaseEntry[];
+  transactions: FishTransaction[];
   dragging: boolean;
   editingName: boolean;
   onNameChange: (value: string) => void;
@@ -1256,6 +1314,7 @@ function PersonScorePanel({
   stats,
   entries,
   purchases,
+  transactions,
   dragging,
   editingName,
   onNameChange,
@@ -1333,6 +1392,27 @@ function PersonScorePanel({
                 {purchase.itemName}
                 <strong>-{purchase.price}</strong>
               </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="transaction-summary">
+        <h3>Lịch sử cá</h3>
+        {transactions.length === 0 ? (
+          <p className="empty-text">Chưa có giao dịch cá.</p>
+        ) : (
+          <div className="transaction-list">
+            {transactions.slice(0, 6).map((transaction) => (
+              <div className="transaction-row" key={transaction.id}>
+                <span>
+                  <strong>{transaction.note}</strong>
+                  <small>{formatDateTime(transaction.createdAt)}</small>
+                </span>
+                <b className={transaction.amount >= 0 ? 'positive' : 'negative'}>
+                  {formatFishAmount(transaction.amount)}
+                </b>
+              </div>
             ))}
           </div>
         )}
@@ -1561,12 +1641,143 @@ function normalizeScoreState(parsed: Partial<ScoreState> | null | undefined): Sc
         };
       })
     : [];
+  const fishTransactions = normalizeFishTransactions(
+    Array.isArray(parsed?.fishTransactions) ? parsed.fishTransactions : null,
+    entries,
+    purchases,
+  );
+  const wallets = rebuildWalletsFromTransactions(fishTransactions, people);
 
   return {
     people,
     entries,
     purchases,
     roomPlacements,
+    wallets,
+    fishTransactions,
+  };
+}
+
+function normalizeFishTransactions(
+  parsedTransactions: FishTransaction[] | null,
+  entries: PhotoEntry[],
+  purchases: PurchaseEntry[],
+) {
+  if (parsedTransactions && parsedTransactions.length > 0) {
+    return finalizeFishTransactions(
+      parsedTransactions
+        .filter((transaction) => isPersonId(transaction.personId))
+        .map((transaction) => ({
+          id: typeof transaction.id === 'string' ? transaction.id : crypto.randomUUID(),
+          personId: transaction.personId,
+          type: isFishTransactionType(transaction.type) ? transaction.type : 'migration_adjustment',
+          amount: normalizeFishAmount(transaction.amount),
+          balanceAfter: 0,
+          note:
+            typeof transaction.note === 'string' && transaction.note.trim()
+              ? transaction.note.trim()
+              : getDefaultTransactionNote(transaction.type, transaction.amount),
+          createdAt:
+            typeof transaction.createdAt === 'string'
+              ? transaction.createdAt
+              : new Date().toISOString(),
+          entryId: optionalString(transaction.entryId),
+          purchaseId: optionalString(transaction.purchaseId),
+          itemId: optionalString(transaction.itemId),
+        })),
+    );
+  }
+
+  return finalizeFishTransactions([
+    ...entries.map((entry) => ({
+      id: `legacy-photo-${entry.id}`,
+      personId: entry.personId,
+      type: 'photo_upload' as FishTransactionType,
+      amount: FISH_PER_PHOTO,
+      balanceAfter: 0,
+      note: `Đăng ảnh: ${entry.name}`,
+      createdAt: entry.createdAt,
+      entryId: entry.id,
+    })),
+    ...purchases.map((purchase) => ({
+      id: `legacy-purchase-${purchase.id}`,
+      personId: purchase.personId,
+      type: 'store_purchase' as FishTransactionType,
+      amount: -purchase.price,
+      balanceAfter: 0,
+      note: `Mua ${purchase.itemName}`,
+      createdAt: purchase.purchasedAt,
+      purchaseId: purchase.id,
+      itemId: purchase.itemId,
+    })),
+  ]);
+}
+
+function finalizeFishTransactions(transactions: FishTransaction[]) {
+  const balances: Record<PersonId, number> = { person_a: 0, person_b: 0 };
+  const applied = [...transactions]
+    .sort(compareTransactionsOldestFirst)
+    .map((transaction) => {
+      const amount = normalizeFishAmount(transaction.amount);
+      balances[transaction.personId] += amount;
+
+      return {
+        ...transaction,
+        amount,
+        balanceAfter: balances[transaction.personId],
+      };
+    });
+
+  return applied.sort(compareTransactionsNewestFirst);
+}
+
+function rebuildWalletsFromTransactions(transactions: FishTransaction[], people: Person[]) {
+  const wallets = people.reduce<Record<PersonId, FishWallet>>(
+    (acc, person) => {
+      acc[person.id] = createEmptyWallet(person.id);
+      return acc;
+    },
+    { person_a: createEmptyWallet('person_a'), person_b: createEmptyWallet('person_b') },
+  );
+
+  [...transactions].sort(compareTransactionsOldestFirst).forEach((transaction) => {
+    const wallet = wallets[transaction.personId];
+
+    wallet.balance += transaction.amount;
+
+    if (transaction.amount >= 0) {
+      wallet.earnedTotal += transaction.amount;
+    } else {
+      wallet.spentTotal += Math.abs(transaction.amount);
+    }
+
+    wallet.updatedAt = transaction.createdAt;
+  });
+
+  return people.map((person) => wallets[person.id] ?? createEmptyWallet(person.id));
+}
+
+function applyFishTransactions(state: ScoreState, transactions: FishTransaction[]): ScoreState {
+  const fishTransactions = finalizeFishTransactions([...state.fishTransactions, ...transactions]);
+
+  return {
+    ...state,
+    fishTransactions,
+    wallets: rebuildWalletsFromTransactions(fishTransactions, state.people),
+  };
+}
+
+function getWallet(wallets: FishWallet[], personId: PersonId) {
+  return wallets.find((wallet) => wallet.personId === personId) ?? createEmptyWallet(personId);
+}
+
+function createEmptyWallet(personId: PersonId): FishWallet {
+  return {
+    personId,
+    balance: 0,
+    earnedTotal: 0,
+    spentTotal: 0,
+    updatedAt: INITIAL_WALLET_DATE,
   };
 }
 
@@ -1582,8 +1793,61 @@ function isStoreCategory(value: unknown): value is StoreCategory {
   return value === 'food' || value === 'furniture' || value === 'clothes';
 }
 
+function isFishTransactionType(value: unknown): value is FishTransactionType {
+  return value === 'photo_upload' || value === 'store_purchase' || value === 'migration_adjustment';
+}
+
 function optionalString(value: unknown) {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function normalizeFishAmount(value: unknown) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.trunc(value);
+}
+
+function compareTransactionsOldestFirst(first: FishTransaction, second: FishTransaction) {
+  const timeDiff = getTimeValue(first.createdAt) - getTimeValue(second.createdAt);
+
+  if (timeDiff !== 0) {
+    return timeDiff;
+  }
+
+  return first.id.localeCompare(second.id);
+}
+
+function compareTransactionsNewestFirst(first: FishTransaction, second: FishTransaction) {
+  const timeDiff = getTimeValue(second.createdAt) - getTimeValue(first.createdAt);
+
+  if (timeDiff !== 0) {
+    return timeDiff;
+  }
+
+  return second.id.localeCompare(first.id);
+}
+
+function getTimeValue(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function getDefaultTransactionNote(type: unknown, amount: unknown) {
+  if (type === 'photo_upload' || normalizeFishAmount(amount) > 0) {
+    return 'Cộng cá';
+  }
+
+  if (type === 'store_purchase' || normalizeFishAmount(amount) < 0) {
+    return 'Trừ cá';
+  }
+
+  return 'Điều chỉnh ví cá';
+}
+
+function formatFishAmount(amount: number) {
+  return `${amount > 0 ? '+' : ''}${amount} cá`;
 }
 
 function normalizePersonName(value: string, index: number) {
@@ -1629,18 +1893,16 @@ function loadDriveConfig(): DriveConfig {
   }
 }
 
-function getStats(entries: PhotoEntry[], purchases: PurchaseEntry[]): BaseStats {
+function getStats(entries: PhotoEntry[], wallet: FishWallet): BaseStats {
   const todayKey = toDateKey(new Date());
   const activeDays = new Set(entries.map((entry) => toDateKey(new Date(entry.createdAt))));
-  const earnedPoints = entries.length * FISH_PER_PHOTO;
-  const spentPoints = purchases.reduce((sum, purchase) => sum + purchase.price, 0);
 
   return {
     totalPhotos: entries.length,
     todayPhotos: entries.filter((entry) => toDateKey(new Date(entry.createdAt)) === todayKey).length,
-    earnedPoints,
-    spentPoints,
-    balancePoints: earnedPoints - spentPoints,
+    earnedPoints: wallet.earnedTotal,
+    spentPoints: wallet.spentTotal,
+    balancePoints: wallet.balance,
     streakDays: getStreakDays(activeDays),
   };
 }

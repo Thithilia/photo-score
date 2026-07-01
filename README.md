@@ -2,7 +2,7 @@
 
 Web mẫu React + Vite để hai người thả ảnh, upload ảnh vào một Google Drive folder chung, nhận cá và mua vật phẩm. Bản hiện tại không dùng database và không dùng Supabase.
 
-Dữ liệu cá, lịch sử mua hàng, kho nội thất và phòng trang trí được lưu trong file `photo-score-state.json` ở Google Drive folder chung. `localStorage` chỉ dùng làm cache/dữ liệu dự phòng khi chưa kết nối Drive.
+Dữ liệu ví cá, lịch sử giao dịch cá, lịch sử mua hàng, kho nội thất và phòng trang trí được lưu trong file `photo-score-state.json` ở Google Drive folder chung. `localStorage` chỉ dùng làm cache/dữ liệu dự phòng khi chưa kết nối Drive.
 
 ## Chạy local
 
@@ -44,12 +44,16 @@ https://photo-score-olive.vercel.app
 
 Khi kết nối lần đầu, app sẽ tìm file `photo-score-state.json` trong folder Drive. Nếu chưa có, app tạo file này từ dữ liệu hiện tại trên trình duyệt. Các lần sau app sẽ tải dữ liệu chung từ file này.
 
+Nếu file Drive cũ chưa có ví cá và lịch sử giao dịch, app sẽ tự tạo dữ liệu này từ ảnh và vật phẩm đã mua hiện có trong lần tải tiếp theo.
+
 ## Cách tính cá và mua vật phẩm
 
 - Mỗi ảnh upload thành công lên Google Drive cộng cố định `5` cá.
 - Mỗi người có vùng thả ảnh riêng.
-- Ảnh gốc upload lên Google Drive. App lưu thumbnail nhỏ, số cá, tên người chơi, lịch sử mua, bố cục phòng và link Drive trong `photo-score-state.json`.
-- Cá khả dụng = cá kiếm được từ ảnh - cá đã mua vật phẩm.
+- Ảnh gốc upload lên Google Drive. App lưu thumbnail nhỏ, ví cá, lịch sử giao dịch, tên người chơi, lịch sử mua, bố cục phòng và link Drive trong `photo-score-state.json`.
+- Cá khả dụng được đọc từ ví cá đã lưu, không còn tính lại trực tiếp từ số ảnh hiện có.
+- Đăng ảnh tạo giao dịch `+5 cá`; mua vật phẩm tạo giao dịch trừ đúng giá món đó.
+- Xóa ảnh khỏi danh sách không tự trừ cá đã nhận, vì ví cá theo lịch sử giao dịch đã phát sinh.
 - Cửa hàng có 3 danh mục: `Thực phẩm`, `Nội thất`, `Quần áo`.
 - Mua `Nội thất` sẽ đưa món đó vào kho chung của trang `Phòng`.
 
