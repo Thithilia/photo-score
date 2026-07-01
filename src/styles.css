@@ -589,6 +589,20 @@ button:disabled {
   object-fit: cover;
 }
 
+.photo-tile-uploading img,
+.photo-tile-uploading .photo-placeholder {
+  opacity: 0.58;
+}
+
+.photo-tile-failed {
+  border-color: var(--danger);
+}
+
+.photo-tile-failed .photo-placeholder {
+  background: var(--surface-warm);
+  color: var(--danger);
+}
+
 .photo-placeholder {
   display: grid;
   width: 100%;

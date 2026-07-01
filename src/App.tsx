@@ -38,6 +38,7 @@ type StoreCategory = 'food' | 'furniture' | 'clothes';
 type AppView = 'score' | 'room';
 type SyncStatus = 'idle' | 'loading' | 'saving' | 'synced' | 'error';
 type FishTransactionType = 'photo_upload' | 'store_purchase' | 'migration_adjustment';
+type PhotoUploadStatus = 'uploading' | 'uploaded' | 'failed';
 
 interface Person {
   id: PersonId;
@@ -55,6 +56,8 @@ interface PhotoEntry {
   driveFileId?: string;
   driveViewLink?: string;
   driveThumbnailLink?: string;
+  uploadStatus?: PhotoUploadStatus;
+  uploadError?: string;
 }
 
 interface PurchaseEntry {
@@ -545,7 +548,9 @@ function App() {
   const statsByPerson = useMemo(() => {
     return state.people.reduce<Record<PersonId, PersonStats>>(
       (acc, person) => {
-        const entries = state.entries.filter((entry) => entry.personId === person.id);
+        const entries = state.entries.filter(
+          (entry) => entry.personId === person.id && isUploadedEntry(entry),
+        );
         const wallet = getWallet(state.wallets, person.id);
         const stats = getStats(entries, wallet);
         acc[person.id] = {
@@ -571,6 +576,7 @@ function App() {
   }, [state.people, statsByPerson]);
 
   const driveConfigured = Boolean(driveConfig.clientId.trim() && driveConfig.folderId.trim());
+  const uploadedEntries = state.entries.filter(isUploadedEntry);
   const totalBalance = state.wallets.reduce((sum, wallet) => sum + wallet.balance, 0);
   const furniturePurchases = state.purchases.filter((purchase) => purchase.category === 'furniture');
   const syncStatusLabel = getSyncStatusLabel(syncStatus);
@@ -731,57 +737,108 @@ function App() {
       return;
     }
 
-    const entries: PhotoEntry[] = [];
-    let failedUploads = 0;
+    const pendingEntries: PhotoEntry[] = imageFiles.map((file) => ({
+      id: crypto.randomUUID(),
+      personId,
+      name: file.name,
+      dataUrl: '',
+      points: 0,
+      createdAt: new Date().toISOString(),
+      uploadStatus: 'uploading',
+    }));
 
-    for (const file of imageFiles) {
-      try {
-        const uploaded = await uploadFileToDrive(file, accessToken, driveConfig.folderId.trim());
-        entries.push({
-          id: crypto.randomUUID(),
-          personId,
-          name: file.name,
-          dataUrl: await createPreviewDataUrl(file),
-          points: FISH_PER_PHOTO,
-          createdAt: new Date().toISOString(),
-          driveFileId: uploaded.id,
-          driveViewLink: uploaded.webViewLink,
-          driveThumbnailLink: uploaded.thumbnailLink,
+    setState((current) => ({
+      ...current,
+      entries: [...pendingEntries, ...current.entries],
+    }));
+    showMessage(`Đang upload ${pendingEntries.length} ảnh lên Drive...`, 1800);
+
+    const uploadResults = await Promise.allSettled(
+      pendingEntries.map(async (entry, index) => {
+        const file = imageFiles[index];
+        const previewPromise = createPreviewDataUrl(file).catch(() => '');
+
+        void previewPromise.then((previewDataUrl) => {
+          if (previewDataUrl) {
+            setState((current) => updateEntryPreview(current, entry.id, previewDataUrl));
+          }
         });
-      } catch (error) {
-        failedUploads += 1;
 
-        if (error instanceof Error && error.message.includes('401')) {
-          setAccessToken(null);
-          setDriveStatus('idle');
+        try {
+          const [uploaded, previewDataUrl] = await Promise.all([
+            uploadFileToDrive(file, accessToken, driveConfig.folderId.trim()),
+            previewPromise,
+          ]);
+
+          setState((current) => {
+            if (!current.entries.some((candidate) => candidate.id === entry.id)) {
+              return current;
+            }
+
+            const uploadedAt = new Date().toISOString();
+            const nextState = {
+              ...current,
+              entries: current.entries.map((candidate) =>
+                candidate.id === entry.id
+                  ? {
+                      ...candidate,
+                      dataUrl: previewDataUrl || candidate.dataUrl,
+                      points: FISH_PER_PHOTO,
+                      createdAt: uploadedAt,
+                      driveFileId: uploaded.id,
+                      driveViewLink: uploaded.webViewLink,
+                      driveThumbnailLink: uploaded.thumbnailLink,
+                      uploadStatus: 'uploaded' as PhotoUploadStatus,
+                      uploadError: undefined,
+                    }
+                  : candidate,
+              ),
+            };
+
+            return applyFishTransactions(nextState, [
+              {
+                id: `photo-${entry.id}`,
+                personId,
+                type: 'photo_upload',
+                amount: FISH_PER_PHOTO,
+                balanceAfter: 0,
+                note: `Đăng ảnh: ${entry.name}`,
+                createdAt: uploadedAt,
+                entryId: entry.id,
+              },
+            ]);
+          });
+        } catch (error) {
+          setState((current) =>
+            updateEntryUploadFailure(
+              current,
+              entry.id,
+              error instanceof Error ? error.message : 'Upload Drive thất bại.',
+            ),
+          );
+
+          if (error instanceof Error && error.message.includes('401')) {
+            setAccessToken(null);
+            setDriveStatus('idle');
+          }
+
+          throw error;
         }
-      }
-    }
+      }),
+    );
 
-    if (entries.length === 0) {
+    const uploadedCount = uploadResults.filter((result) => result.status === 'fulfilled').length;
+    const failedUploads = uploadResults.length - uploadedCount;
+
+    if (uploadedCount === 0) {
       showMessage('Upload Drive thất bại. Kiểm tra quyền folder hoặc kết nối lại Google Drive.', 2800);
       return;
     }
 
-    setState((current) =>
-      applyFishTransactions(
-        { ...current, entries: [...entries, ...current.entries] },
-        entries.map((entry) => ({
-          id: `photo-${entry.id}`,
-          personId,
-          type: 'photo_upload',
-          amount: FISH_PER_PHOTO,
-          balanceAfter: 0,
-          note: `Đăng ảnh: ${entry.name}`,
-          createdAt: entry.createdAt,
-          entryId: entry.id,
-        })),
-      ),
-    );
     showMessage(
       failedUploads > 0
-        ? `Đã upload ${entries.length} ảnh, lỗi ${failedUploads} ảnh.`
-        : `Đã upload Drive và cộng ${entries.length * FISH_PER_PHOTO} cá.`,
+        ? `Đã upload ${uploadedCount} ảnh, lỗi ${failedUploads} ảnh.`
+        : `Đã upload Drive và cộng ${uploadedCount * FISH_PER_PHOTO} cá.`,
       2400,
     );
   }
@@ -991,7 +1048,7 @@ function App() {
       <section className="summary-band">
         <div>
           <span>Tổng ảnh</span>
-          <strong>{state.entries.length}</strong>
+          <strong>{uploadedEntries.length}</strong>
         </div>
         <div>
           <span>Cá khả dụng</span>
@@ -1424,9 +1481,14 @@ function PersonScorePanel({
         ) : (
           entries.slice(0, 12).map((entry) => {
             const imageSource = entry.dataUrl || entry.driveThumbnailLink;
+            const uploadStatus = entry.uploadStatus ?? 'uploaded';
 
             return (
-              <figure key={entry.id} className="photo-tile">
+              <figure
+                key={entry.id}
+                className={`photo-tile photo-tile-${uploadStatus}`}
+                title={entry.uploadError}
+              >
                 {imageSource ? (
                   <img src={imageSource} alt={entry.name} />
                 ) : (
@@ -1435,7 +1497,11 @@ function PersonScorePanel({
                   </div>
                 )}
                 <figcaption>
-                  {entry.driveViewLink ? (
+                  {uploadStatus === 'uploading' ? (
+                    <span>Đang tải</span>
+                  ) : uploadStatus === 'failed' ? (
+                    <span>Lỗi</span>
+                  ) : entry.driveViewLink ? (
                     <a href={entry.driveViewLink} target="_blank" rel="noreferrer">
                       +{FISH_PER_PHOTO}
                     </a>
@@ -1593,17 +1659,26 @@ function normalizeScoreState(parsed: Partial<ScoreState> | null | undefined): Sc
   });
 
   const entries = Array.isArray(parsed?.entries)
-    ? parsed.entries.map((entry) => ({
-        id: typeof entry.id === 'string' ? entry.id : crypto.randomUUID(),
-        personId: isPersonId(entry.personId) ? entry.personId : 'person_a',
-        name: typeof entry.name === 'string' ? entry.name : 'Ảnh',
-        dataUrl: typeof entry.dataUrl === 'string' ? entry.dataUrl : '',
-        points: FISH_PER_PHOTO,
-        createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
-        driveFileId: optionalString(entry.driveFileId),
-        driveViewLink: optionalString(entry.driveViewLink),
-        driveThumbnailLink: optionalString(entry.driveThumbnailLink),
-      }))
+    ? parsed.entries.map((entry) => {
+        const uploadStatus = isPhotoUploadStatus(entry.uploadStatus)
+          ? entry.uploadStatus
+          : 'uploaded';
+
+        return {
+          id: typeof entry.id === 'string' ? entry.id : crypto.randomUUID(),
+          personId: isPersonId(entry.personId) ? entry.personId : 'person_a',
+          name: typeof entry.name === 'string' ? entry.name : 'Ảnh',
+          dataUrl: typeof entry.dataUrl === 'string' ? entry.dataUrl : '',
+          points: uploadStatus === 'uploaded' ? FISH_PER_PHOTO : 0,
+          createdAt:
+            typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString(),
+          driveFileId: optionalString(entry.driveFileId),
+          driveViewLink: optionalString(entry.driveViewLink),
+          driveThumbnailLink: optionalString(entry.driveThumbnailLink),
+          uploadStatus,
+          uploadError: optionalString(entry.uploadError),
+        };
+      })
     : [];
 
   const purchases = Array.isArray(parsed?.purchases)
@@ -1689,7 +1764,7 @@ function normalizeFishTransactions(
   }
 
   return finalizeFishTransactions([
-    ...entries.map((entry) => ({
+    ...entries.filter(isUploadedEntry).map((entry) => ({
       id: `legacy-photo-${entry.id}`,
       personId: entry.personId,
       type: 'photo_upload' as FishTransactionType,
@@ -1715,7 +1790,16 @@ function normalizeFishTransactions(
 
 function finalizeFishTransactions(transactions: FishTransaction[]) {
   const balances: Record<PersonId, number> = { person_a: 0, person_b: 0 };
-  const applied = [...transactions]
+  const seenIds = new Set<string>();
+  const uniqueTransactions = transactions.filter((transaction) => {
+    if (seenIds.has(transaction.id)) {
+      return false;
+    }
+
+    seenIds.add(transaction.id);
+    return true;
+  });
+  const applied = uniqueTransactions
     .sort(compareTransactionsOldestFirst)
     .map((transaction) => {
       const amount = normalizeFishAmount(transaction.amount);
@@ -1767,6 +1851,33 @@ function applyFishTransactions(state: ScoreState, transactions: FishTransaction[
   };
 }
 
+function updateEntryPreview(state: ScoreState, entryId: string, dataUrl: string): ScoreState {
+  return {
+    ...state,
+    entries: state.entries.map((entry) => (entry.id === entryId ? { ...entry, dataUrl } : entry)),
+  };
+}
+
+function updateEntryUploadFailure(state: ScoreState, entryId: string, uploadError: string): ScoreState {
+  return {
+    ...state,
+    entries: state.entries.map((entry) =>
+      entry.id === entryId
+        ? {
+            ...entry,
+            points: 0,
+            uploadStatus: 'failed',
+            uploadError,
+          }
+        : entry,
+    ),
+  };
+}
+
+function isUploadedEntry(entry: PhotoEntry) {
+  return !entry.uploadStatus || entry.uploadStatus === 'uploaded';
+}
+
 function getWallet(wallets: FishWallet[], personId: PersonId) {
   return wallets.find((wallet) => wallet.personId === personId) ?? createEmptyWallet(personId);
 }
@@ -1795,6 +1906,10 @@ function isStoreCategory(value: unknown): value is StoreCategory {
 
 function isFishTransactionType(value: unknown): value is FishTransactionType {
   return value === 'photo_upload' || value === 'store_purchase' || value === 'migration_adjustment';
+}
+
+function isPhotoUploadStatus(value: unknown): value is PhotoUploadStatus {
+  return value === 'uploading' || value === 'uploaded' || value === 'failed';
 }
 
 function optionalString(value: unknown) {
