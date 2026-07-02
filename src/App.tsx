@@ -5,6 +5,7 @@ import {
   PointerEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import type { LucideIcon } from 'lucide-react';
@@ -152,6 +153,7 @@ interface StoreItem {
 
 interface GoogleTokenResponse {
   access_token?: string;
+  expires_in?: number;
   error?: string;
   error_description?: string;
 }
@@ -501,6 +503,7 @@ function App() {
   const [state, setState] = useState<ScoreState>(() => loadState());
   const [driveConfig, setDriveConfig] = useState<DriveConfig>(() => loadDriveConfig());
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accessTokenExpiresAt, setAccessTokenExpiresAt] = useState<number | null>(null);
   const [driveStatus, setDriveStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>(
     'idle',
   );
@@ -516,6 +519,7 @@ function App() {
   const [currentView, setCurrentView] = useState<AppView>('score');
   const [draggingPlacementId, setDraggingPlacementId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const tokenRefreshPromiseRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -524,6 +528,7 @@ function App() {
   useEffect(() => {
     localStorage.setItem(DRIVE_CONFIG_KEY, JSON.stringify(driveConfig));
     setAccessToken(null);
+    setAccessTokenExpiresAt(null);
     setDriveStatus('idle');
     setDriveError(null);
     setDriveStateFileId(null);
@@ -597,34 +602,105 @@ function App() {
     setDriveError(null);
 
     try {
-      await loadGoogleIdentityScript();
+      const token = await requestDriveAccessToken('consent');
+      await loadSharedState(token);
+    } catch (error) {
+      setDriveStatus('error');
+      setDriveError(error instanceof Error ? error.message : 'Không kết nối được Google Drive.');
+    }
+  }
+
+  async function requestDriveAccessToken(prompt: 'consent' | '') {
+    if (!driveConfigured) {
+      throw new Error('Cần nhập Google Client ID và Drive Folder ID.');
+    }
+
+    await loadGoogleIdentityScript();
+
+    return new Promise<string>((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(
+        () => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          reject(
+            new Error(
+              prompt === ''
+                ? 'Không tự làm mới được phiên Google Drive.'
+                : 'Không lấy được Google token.',
+            ),
+          );
+        },
+        prompt === '' ? 10000 : 90000,
+      );
 
       const tokenClient = window.google?.accounts.oauth2.initTokenClient({
         client_id: driveConfig.clientId.trim(),
         scope: DRIVE_SCOPE,
         callback: (response) => {
-          if (response.error || !response.access_token) {
-            setDriveStatus('error');
-            setDriveError(response.error_description || response.error || 'Không lấy được Google token.');
+          if (settled) {
             return;
           }
 
+          settled = true;
+          window.clearTimeout(timeoutId);
+
+          if (response.error || !response.access_token) {
+            reject(
+              new Error(response.error_description || response.error || 'Không lấy được Google token.'),
+            );
+            return;
+          }
+
+          const expiresInSeconds = response.expires_in ?? 3600;
           setAccessToken(response.access_token);
+          setAccessTokenExpiresAt(Date.now() + expiresInSeconds * 1000);
           setDriveStatus('connected');
           setDriveError(null);
-          void loadSharedState(response.access_token);
+          resolve(response.access_token);
         },
       });
 
       if (!tokenClient) {
-        throw new Error('Không tải được Google Identity Services.');
+        window.clearTimeout(timeoutId);
+        settled = true;
+        reject(new Error('Không tải được Google Identity Services.'));
+        return;
       }
 
-      tokenClient.requestAccessToken({ prompt: 'consent' });
-    } catch (error) {
-      setDriveStatus('error');
-      setDriveError(error instanceof Error ? error.message : 'Không kết nối được Google Drive.');
+      try {
+        tokenClient.requestAccessToken({ prompt });
+      } catch (error) {
+        window.clearTimeout(timeoutId);
+        settled = true;
+        reject(error instanceof Error ? error : new Error('Không mở được Google Drive auth.'));
+      }
+    });
+  }
+
+  async function getFreshAccessToken(options: { interactive?: boolean; force?: boolean } = {}) {
+    const shouldRefresh =
+      options.force ||
+      !accessToken ||
+      (accessTokenExpiresAt !== null && Date.now() > accessTokenExpiresAt - 120000);
+
+    if (!shouldRefresh && accessToken) {
+      return accessToken;
     }
+
+    if (tokenRefreshPromiseRef.current) {
+      return tokenRefreshPromiseRef.current;
+    }
+
+    const refreshPromise = requestDriveAccessToken(options.interactive ? 'consent' : '').finally(() => {
+      tokenRefreshPromiseRef.current = null;
+    });
+
+    tokenRefreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
   }
 
   async function loadSharedState(token: string) {
@@ -667,6 +743,7 @@ function App() {
 
       if (isAuthError(nextError)) {
         setAccessToken(null);
+        setAccessTokenExpiresAt(null);
         setDriveStatus('idle');
       }
 
@@ -675,7 +752,7 @@ function App() {
   }
 
   async function saveSharedState(nextState: ScoreState) {
-    if (!accessToken || !driveStateFileId) {
+    if (!driveStateFileId) {
       return;
     }
 
@@ -683,32 +760,54 @@ function App() {
     setSyncError(null);
 
     try {
-      const savedFile = await updateDriveStateFile(accessToken, driveStateFileId, nextState);
+      const token = await getFreshAccessToken();
+      const savedFile = await updateDriveStateFile(token, driveStateFileId, nextState);
       setLastSyncedAt(savedFile.modifiedTime ?? new Date().toISOString());
       setSyncStatus('synced');
     } catch (error) {
       const nextError = getErrorMessage(error, 'Không lưu được dữ liệu chung lên Drive.');
-      setSyncStatus('error');
-      setSyncError(nextError);
 
       if (isAuthError(nextError)) {
-        setAccessToken(null);
-        setDriveStatus('idle');
-        showMessage('Phiên Google Drive đã hết hạn. Kết nối lại để lưu dữ liệu chung.', 3200);
-        return;
+        try {
+          const token = await getFreshAccessToken({ force: true });
+          const savedFile = await updateDriveStateFile(token, driveStateFileId, nextState);
+          setLastSyncedAt(savedFile.modifiedTime ?? new Date().toISOString());
+          setSyncStatus('synced');
+          return;
+        } catch (retryError) {
+          const retryMessage = getErrorMessage(retryError, nextError);
+          setAccessToken(null);
+          setAccessTokenExpiresAt(null);
+          setDriveStatus('idle');
+          setSyncStatus('error');
+          setSyncError(retryMessage);
+          showMessage('Phiên Google Drive đã hết hạn. Bấm Kết nối Drive để lưu tiếp.', 3600);
+          return;
+        }
       }
+
+      setSyncStatus('error');
+      setSyncError(nextError);
 
       showMessage('Không lưu được dữ liệu chung lên Drive.', 2600);
     }
   }
 
-  function refreshSharedState() {
-    if (!accessToken) {
-      showMessage('Kết nối Google Drive trước khi tải dữ liệu chung.');
+  async function refreshSharedState() {
+    if (!driveConfigured) {
+      showMessage('Cần nhập Google Client ID và Drive Folder ID.');
       return;
     }
 
-    void loadSharedState(accessToken);
+    try {
+      const token = await getFreshAccessToken({ interactive: !accessToken });
+      await loadSharedState(token);
+    } catch (error) {
+      const nextError = getErrorMessage(error, 'Không tải được dữ liệu chung.');
+      setDriveStatus('idle');
+      setDriveError(nextError);
+      showMessage('Không tự kết nối lại được Google Drive. Bấm Kết nối Drive để cấp quyền lại.', 3600);
+    }
   }
 
   function updateDriveConfig(field: keyof DriveConfig, value: string) {
@@ -725,8 +824,8 @@ function App() {
   }
 
   async function handleFiles(personId: PersonId, files: FileList | File[]) {
-    if (!accessToken) {
-      showMessage('Kết nối Google Drive trước khi thả ảnh.');
+    if (!driveConfigured) {
+      showMessage('Cần nhập Google Client ID và Drive Folder ID.');
       return;
     }
 
@@ -752,6 +851,7 @@ function App() {
       entries: [...pendingEntries, ...current.entries],
     }));
     showMessage(`Đang upload ${pendingEntries.length} ảnh lên Drive...`, 1800);
+    const uploadTokenPromise = getFreshAccessToken({ interactive: !accessToken });
 
     const uploadResults = await Promise.allSettled(
       pendingEntries.map(async (entry, index) => {
@@ -765,8 +865,9 @@ function App() {
         });
 
         try {
+          const token = await uploadTokenPromise;
           const [uploaded, previewDataUrl] = await Promise.all([
-            uploadFileToDrive(file, accessToken, driveConfig.folderId.trim()),
+            uploadFileToDrive(file, token, driveConfig.folderId.trim()),
             previewPromise,
           ]);
 
@@ -819,6 +920,7 @@ function App() {
 
           if (error instanceof Error && error.message.includes('401')) {
             setAccessToken(null);
+            setAccessTokenExpiresAt(null);
             setDriveStatus('idle');
           }
 
@@ -1103,7 +1205,7 @@ function App() {
                 </button>
                 <button
                   className="ghost-button"
-                  disabled={!accessToken || syncStatus === 'loading'}
+                  disabled={!driveConfigured || syncStatus === 'loading'}
                   onClick={refreshSharedState}
                   type="button"
                 >
