@@ -213,7 +213,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Cà phê sáng',
     description: 'Phần thưởng nhỏ sau một ngày chăm chỉ.',
-    price: 15,
+    price: 1,
     icon: Utensils,
   },
   {
@@ -221,7 +221,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Bánh ngọt',
     description: 'Dành cho ngày có nhiều ảnh đẹp.',
-    price: 20,
+    price: 2,
     icon: Utensils,
   },
   {
@@ -229,7 +229,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Bữa tối',
     description: 'Đổi cá lấy một bữa ăn tử tế.',
-    price: 35,
+    price: 6,
     icon: Utensils,
   },
   {
@@ -237,7 +237,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Trà sữa',
     description: 'Một ly ngọt nhẹ cho ngày nhiều việc.',
-    price: 18,
+    price: 3,
     icon: Utensils,
   },
   {
@@ -245,7 +245,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Bánh mì',
     description: 'Nhanh, gọn, đủ vui cho một bữa nhỏ.',
-    price: 22,
+    price: 3,
     icon: Utensils,
   },
   {
@@ -253,7 +253,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Mì nóng',
     description: 'Một tô ấm bụng sau giờ làm.',
-    price: 25,
+    price: 4,
     icon: Utensils,
   },
   {
@@ -261,7 +261,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Trái cây',
     description: 'Món nhẹ để bù năng lượng.',
-    price: 28,
+    price: 4,
     icon: Utensils,
   },
   {
@@ -269,7 +269,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Kem dâu',
     description: 'Phần thưởng mát lạnh cho ảnh đẹp.',
-    price: 30,
+    price: 4,
     icon: Utensils,
   },
   {
@@ -277,7 +277,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Gà rán',
     description: 'Đổi cá lấy một món giòn vui.',
-    price: 38,
+    price: 7,
     icon: Utensils,
   },
   {
@@ -285,7 +285,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Pizza nhỏ',
     description: 'Một lát vui vẻ cho cuối ngày.',
-    price: 42,
+    price: 8,
     icon: Utensils,
   },
   {
@@ -293,7 +293,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Sushi set',
     description: 'Món đẹp mắt cho ngày nhiều cá.',
-    price: 48,
+    price: 10,
     icon: Utensils,
   },
   {
@@ -301,7 +301,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Lẩu mini',
     description: 'Một phần lớn hơn cho buổi tối đặc biệt.',
-    price: 55,
+    price: 12,
     icon: Utensils,
   },
   {
@@ -309,7 +309,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Bít tết',
     description: 'Phần thưởng cao cấp sau chuỗi ngày chăm.',
-    price: 68,
+    price: 14,
     icon: Utensils,
   },
   {
@@ -317,7 +317,7 @@ const storeItems: StoreItem[] = [
     category: 'food',
     name: 'Hải sản',
     description: 'Món lớn dành cho kho cá thật dày.',
-    price: 80,
+    price: 16,
     icon: Utensils,
   },
   {
@@ -325,7 +325,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Đèn bàn',
     description: 'Một góc phòng sáng hơn.',
-    price: 25,
+    price: 14,
     icon: Armchair,
   },
   {
@@ -333,7 +333,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Ghế đọc sách',
     description: 'Cho những buổi tối yên tĩnh.',
-    price: 45,
+    price: 25,
     icon: Armchair,
   },
   {
@@ -341,7 +341,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Kệ nhỏ',
     description: 'Nơi để vài món kỷ niệm.',
-    price: 60,
+    price: 36,
     icon: Armchair,
   },
   {
@@ -349,7 +349,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Chậu cây',
     description: 'Một chút xanh cho góc phòng.',
-    price: 18,
+    price: 12,
     icon: Armchair,
   },
   {
@@ -357,7 +357,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Thảm sàn',
     description: 'Làm căn phòng mềm và ấm hơn.',
-    price: 28,
+    price: 15,
     icon: Armchair,
   },
   {
@@ -365,7 +365,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Đồng hồ treo tường',
     description: 'Một điểm nhấn nhỏ trên tường.',
-    price: 32,
+    price: 18,
     icon: Armchair,
   },
   {
@@ -373,7 +373,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Tủ đầu giường',
     description: 'Chỗ để đèn, sách và vài món nhỏ.',
-    price: 38,
+    price: 22,
     icon: Armchair,
   },
   {
@@ -381,7 +381,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Bàn tròn',
     description: 'Một góc ngồi uống nước đơn giản.',
-    price: 48,
+    price: 30,
     icon: Armchair,
   },
   {
@@ -389,7 +389,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Sofa nhỏ',
     description: 'Một chỗ ngồi thoải mái hơn.',
-    price: 72,
+    price: 45,
     icon: Armchair,
   },
   {
@@ -397,7 +397,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Đèn đứng',
     description: 'Ánh sáng dịu cho buổi tối.',
-    price: 78,
+    price: 48,
     icon: Armchair,
   },
   {
@@ -405,7 +405,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Tủ quần áo',
     description: 'Món lớn giúp phòng gọn hơn.',
-    price: 90,
+    price: 55,
     icon: Armchair,
   },
   {
@@ -413,7 +413,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Bàn học',
     description: 'Một góc làm việc riêng.',
-    price: 96,
+    price: 58,
     icon: Armchair,
   },
   {
@@ -421,7 +421,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Bàn trang điểm',
     description: 'Một góc chăm sóc bản thân.',
-    price: 105,
+    price: 62,
     icon: Armchair,
   },
   {
@@ -429,7 +429,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Giường đôi',
     description: 'Món trung tâm cho căn phòng mơ ước.',
-    price: 130,
+    price: 75,
     icon: Armchair,
   },
   {
@@ -437,7 +437,7 @@ const storeItems: StoreItem[] = [
     category: 'furniture',
     name: 'Rèm cửa',
     description: 'Làm phòng riêng tư và dịu hơn.',
-    price: 52,
+    price: 32,
     icon: Armchair,
   },
   {
@@ -445,7 +445,7 @@ const storeItems: StoreItem[] = [
     category: 'clothes',
     name: 'Mũ đơn giản',
     description: 'Một món dễ mua, dễ dùng.',
-    price: 20,
+    price: 5,
     icon: Shirt,
   },
   {
@@ -453,7 +453,7 @@ const storeItems: StoreItem[] = [
     category: 'clothes',
     name: 'Áo mới',
     description: 'Đổi cá cho một bộ đồ mới.',
-    price: 40,
+    price: 10,
     icon: Shirt,
   },
   {
@@ -461,7 +461,7 @@ const storeItems: StoreItem[] = [
     category: 'clothes',
     name: 'Áo khoác',
     description: 'Phần thưởng lớn cho chuỗi ngày dài.',
-    price: 70,
+    price: 18,
     icon: Shirt,
   },
 ];
