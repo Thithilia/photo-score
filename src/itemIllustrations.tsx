@@ -160,6 +160,133 @@ function renderIllustration(itemId: string, category: StoreIllustrationCategory)
           <path d="M42 24v8M60 20v12M78 24v8" {...stroke} />
         </>
       );
+    case 'water-bottle':
+      return (
+        <>
+          <path d="M50 18h20v8H50z" fill="var(--ill-accent)" {...filledStroke} />
+          <path d="M46 26h28v42H46z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M51 39h18v16H51z" fill="var(--ill-soft)" {...filledStroke} />
+          <path d="M54 33h12M54 61h12" {...stroke} />
+        </>
+      );
+    case 'yogurt-cup':
+      return (
+        <>
+          <path d="M39 25h42v8H39z" fill="var(--ill-accent)" {...filledStroke} />
+          <path d="M42 33h36l-6 35H48z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M69 15l16 21" {...stroke} />
+          <path d="M52 48h16M54 58h12" {...stroke} />
+        </>
+      );
+    case 'bao-bun':
+      return (
+        <>
+          <path d="M32 55c5-22 50-22 56 0v12H32z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M47 45c4-5 9-5 13 0M61 43c5-5 11-4 14 1" {...stroke} />
+          <path d="M48 20v10M60 15v12M72 20v10" {...stroke} />
+        </>
+      );
+    case 'french-fries':
+      return (
+        <>
+          <path d="M44 18l5 29M57 15l1 32M70 18l-5 29M82 21l-9 26" {...stroke} />
+          <path d="M37 40h46l-7 31H44z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M47 54h26" {...stroke} />
+        </>
+      );
+    case 'salad-bowl':
+      return (
+        <>
+          <path d="M32 44h56L78 66H42z" fill="var(--ill-main)" {...filledStroke} />
+          <circle cx="47" cy="39" fill="var(--ill-accent)" r="6" />
+          <circle cx="60" cy="35" fill="var(--ill-soft)" r="7" />
+          <circle cx="73" cy="39" fill="var(--ill-accent)" r="6" />
+          <path d="M48 51h25M44 59h32" {...stroke} />
+        </>
+      );
+    case 'pho-bowl':
+      return (
+        <>
+          <path d="M31 42h58L78 66H42z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M38 38h44" {...stroke} />
+          <path d="M42 27c8 7 17-3 25 5M50 18v12M64 16v12M78 18v12" {...stroke} />
+          <path d="M78 23l21 13M82 18l21 13" {...stroke} />
+        </>
+      );
+    case 'com-tam':
+      return (
+        <>
+          <path d="M27 30h66v37H27z" fill="var(--ill-soft)" {...filledStroke} />
+          <circle cx="51" cy="49" fill="var(--ill-main)" r="15" {...filledStroke} />
+          <path d="M66 38h16v20H66z" fill="var(--ill-accent)" {...filledStroke} />
+          <path d="M24 24v42M96 28v34M47 44h8M45 53h11" {...stroke} />
+        </>
+      );
+    case 'takoyaki':
+      return (
+        <>
+          <path d="M30 31h60v35H30z" fill="var(--ill-soft)" {...filledStroke} />
+          <circle cx="45" cy="45" fill="var(--ill-main)" r="10" {...filledStroke} />
+          <circle cx="60" cy="52" fill="var(--ill-main)" r="10" {...filledStroke} />
+          <circle cx="75" cy="45" fill="var(--ill-main)" r="10" {...filledStroke} />
+          <path d="M40 43h10M55 50h10M70 43h10" {...stroke} />
+        </>
+      );
+    case 'burger':
+      return (
+        <>
+          <path d="M32 39c7-20 49-20 56 0z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M31 42h58v9H31z" fill="var(--ill-accent)" {...filledStroke} />
+          <path d="M35 53h50v10H35z" fill="var(--ill-soft)" {...filledStroke} />
+          <path d="M39 64h42v7H39z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M49 31h5M61 28h5M73 32h5" {...stroke} />
+        </>
+      );
+    case 'banh-xeo':
+      return (
+        <>
+          <path d="M26 55c15-28 52-33 68 0z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M35 55h50M47 44l8 8M61 40l7 10M75 45l-9 8" {...stroke} />
+          <path d="M39 64h42" {...stroke} />
+        </>
+      );
+    case 'spaghetti':
+      return (
+        <>
+          <path d="M27 31h66v36H27z" fill="var(--ill-soft)" {...filledStroke} />
+          <path d="M43 47c7-10 25 10 34-1M42 54c11-9 24 8 36-1M45 40c9-7 20 7 29 0" {...stroke} />
+          <circle cx="61" cy="48" fill="var(--ill-accent)" r="6" />
+          <path d="M91 24v42M84 25v13M90 25v13M96 25v13" {...stroke} />
+        </>
+      );
+    case 'ramen-bowl':
+      return (
+        <>
+          <path d="M31 42h58L79 67H41z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M38 38h44M45 49c9-7 21 7 30 0" {...stroke} />
+          <circle cx="52" cy="53" fill="var(--ill-soft)" r="7" {...filledStroke} />
+          <circle cx="52" cy="53" fill="var(--ill-accent)" r="3" />
+          <path d="M78 21l21 13M82 16l21 13M47 19v11M60 15v12M73 19v11" {...stroke} />
+        </>
+      );
+    case 'dessert-box':
+      return (
+        <>
+          <path d="M31 35h58v34H31z" fill="var(--ill-soft)" {...filledStroke} />
+          <path d="M31 28h58v10H31z" fill="var(--ill-accent)" {...filledStroke} />
+          <path d="M42 45h14v14H42zM64 45h14v14H64z" fill="var(--ill-main)" {...filledStroke} />
+          <path d="M49 39v26M71 39v26" {...stroke} />
+        </>
+      );
+    case 'bbq-combo':
+      return (
+        <>
+          <path d="M28 36h64v28H28z" fill="var(--ill-soft)" {...filledStroke} />
+          <path d="M36 36v28M48 36v28M60 36v28M72 36v28M84 36v28" {...stroke} />
+          <path d="M37 24l45 36M48 22l45 36" {...stroke} />
+          <path d="M44 29h13v8H44zM63 43h13v8H63z" fill="var(--ill-main)" {...filledStroke} />
+        </>
+      );
     case 'lamp':
       return (
         <>
